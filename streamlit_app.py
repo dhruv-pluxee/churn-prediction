@@ -46,7 +46,7 @@ High Risk
 Reason: Business Discontinuity - Company announced complete shutdown impacting all operations including benefits.
 Summary: The company is facing imminent closure, directly impacting its ability to retain any employee benefits plans. This represents a critical churn event for any associated benefits provider.
 
-**Example Output Format (for No Risk):**
+**Example Output Format (for No Risk):
 No Churn Risk Indicated
 Summary: The article discusses general market trends not specific to the company's operational or financial health. It provides no indication of changes relevant to employee benefits or potential churn.
 """
@@ -212,7 +212,7 @@ def display_summary_with_color(company_name, summary_text):
         st.success(summary_text)
 
 
-def run_analysis(company_names, days_to_search):
+def run_analysis(company_names, days_to_search, custom_keyword_string=None):
     """Main function to orchestrate the news fetching and analysis for multiple companies."""
     results = {}
     today = datetime.today()
@@ -220,8 +220,8 @@ def run_analysis(company_names, days_to_search):
     from_date = today - timedelta(days=days_to_search)
     max_articles_per_query = 10
 
-    # --- YOUR SPECIFIED CHURN KEYWORDS (UNCHANGED) ---
-    churn_keywords = {
+    # --- DEFAULT CHURN KEYWORDS ---
+    default_churn_keywords = {
         "Corporate Restructuring": [
             "merger", "acquisition", "investment", "joint venture", "IPO", "restructuring",
             "realignment", "rebranding", "subsidiary", "consolidation"
@@ -261,6 +261,21 @@ def run_analysis(company_names, days_to_search):
         ]
     }
 
+    # Process custom keywords from text area
+    custom_keywords_flat_list = []
+    if custom_keyword_string:
+        # Split by comma and strip whitespace
+        custom_keywords_flat_list = [
+            kw.strip() for kw in custom_keyword_string.split(',') if kw.strip()]
+        # For simplification, we'll put all custom keywords into a single 'Custom' category
+        if custom_keywords_flat_list:
+            churn_keywords_to_use = {"Custom": custom_keywords_flat_list}
+        else:
+            # Fallback if string is empty after stripping
+            churn_keywords_to_use = default_churn_keywords
+    else:
+        churn_keywords_to_use = default_churn_keywords
+
     # --- YOUR SPECIFIED ALLOWED DOMAINS (UNCHANGED) ---
     allowed_domains = [
         "livemint.com", "economictimes.indiatimes.com", "business-standard.com",
@@ -276,7 +291,7 @@ def run_analysis(company_names, days_to_search):
         "Taxscan.in", "bwbusinessworld.com", "inc42.com",
         "yourstory.com", "vccircle.com", "entrackr.com",
         "the-ken.com", "linkedin.com", "mca.gov.in",
-        "zaubacorp.com", "tofler.in"
+        "zaubacorp.com", "tofler.in", "smestreet.in"
     ]
 
     processed_allowed_domains = [domain.replace(
@@ -288,9 +303,13 @@ def run_analysis(company_names, days_to_search):
     st.sidebar.info(f"Max Articles per Query: **{max_articles_per_query}**")
     st.sidebar.info(
         f"Filtered by {len(processed_allowed_domains)} specified business news domains.")
+    if custom_keyword_string:
+        st.sidebar.info("Using **custom keywords** for search.")
+    else:
+        st.sidebar.info("Using **default keywords** for search.")
 
     for company in company_names:
-        queries = [company] + [f"{company} {keyword}" for category_keywords in churn_keywords.values()
+        queries = [company] + [f"{company} {keyword}" for category_keywords in churn_keywords_to_use.values()
                                for keyword in category_keywords]
         company_analysis = analyze_news(
             company, from_date, today, max_articles_per_query, queries, processed_allowed_domains
@@ -318,22 +337,20 @@ days_to_search = st.slider(
     help="This determines how far back in time the news articles will be fetched."
 )
 
-# File uploader widget - Modified to accept Excel files
-uploaded_file = st.file_uploader(
-    "Upload your 'company_names.xlsx' file", type=["xlsx"])
+# File uploader widget for company names
+uploaded_companies_file = st.file_uploader(
+    "Upload your 'company_names.xlsx' file (Optional)", type=["xlsx"], key="companies_upload")
 
 company_names_from_upload = []
-if uploaded_file is not None:
+if uploaded_companies_file is not None:
     try:
-        # Changed to pd.read_excel
-        company_df = pd.read_excel(uploaded_file)
+        company_df = pd.read_excel(uploaded_companies_file)
         if "CompanyName" in company_df.columns:
             company_names_from_upload = company_df["CompanyName"].dropna(
             ).tolist()
             if company_names_from_upload:
                 st.success(
-                    f"Successfully loaded **{len(company_names_from_upload)}** companies from **'{uploaded_file.name}'**.")
-                st.info("You can now click 'Start Analysis' to begin.")
+                    f"Successfully loaded **{len(company_names_from_upload)}** companies from **'{uploaded_companies_file.name}'**.")
             else:
                 st.warning(
                     "The 'CompanyName' column is empty after loading. Please check your Excel file.")
@@ -343,14 +360,15 @@ if uploaded_file is not None:
     except Exception as e:
         st.error(
             f"Error reading Excel file: {e}. Please ensure it's a valid Excel file with the correct column name.")
-else:
-    st.info("Please upload an Excel file with a 'CompanyName' column to proceed.")
+
 
 # Custom input for company names (optional fallback)
 st.markdown("---")
 st.subheader("Or enter company names manually (comma-separated):")
 manual_company_input = st.text_input(
     "Example: Reliance Industries, Tata Consultancy Services, Wipro")
+
+company_names_to_analyze = []
 if manual_company_input:
     manual_companies = [c.strip()
                         for c in manual_company_input.split(',') if c.strip()]
@@ -358,10 +376,67 @@ if manual_company_input:
         st.info(
             f"Using manually entered companies: **{', '.join(manual_companies)}**")
         company_names_to_analyze = manual_companies
-    else:
-        company_names_to_analyze = company_names_from_upload
 else:
     company_names_to_analyze = company_names_from_upload
+
+
+# --- Keyword Customization (Text Area) ---
+st.markdown("---")
+st.subheader("Custom Search Keywords (Optional)")
+st.info("Enter your custom keywords below, separated by commas. If this field is left empty, the default keywords will be used.")
+
+custom_keywords_input = st.text_area(
+    "Enter keywords (e.g., layoff, acquisition, new CEO, financial trouble)",
+    height=100,
+    help="Each keyword will be searched alongside the company name. Separate multiple keywords with commas."
+)
+
+
+# Display default keywords
+st.markdown("---")
+st.subheader("Default Churn Keywords for Reference")
+with st.expander("Click to view default keywords"):
+    default_churn_keywords_display = {
+        "Corporate Restructuring": [
+            "merger", "acquisition", "investment", "joint venture", "IPO", "restructuring",
+            "realignment", "rebranding", "subsidiary", "consolidation"
+        ],
+        "Business Discontinuity": [
+            "shutdown", "closed", "bankruptcy", "insolvency", "pivot", "market exit"
+        ],
+        "Strategic Policy Changes": [
+            "benefits withdrawn", "benefits discontinued", "centralization",
+            "new CEO", "cost cutting", "budget cuts", "strategy shift"
+        ],
+        "Financial Constraints": [
+            "payroll issue", "financial loss", "cost pressure", "cash flow", "budget reallocation"
+        ],
+        "Employment Structure Changes": [
+            "employee transfer", "contractual workforce", "remote work",
+            "layoffs", "furloughs", "downsizing"
+        ],
+        "Regulatory & Compliance": [
+            "tax policy", "labor law", "income tax", "GST change", "budget amendment", "social security"
+        ],
+        "Competitive Market Dynamics": [
+            "switched vendor", "new platform", "competitor", "pricing", "market share",
+            "disruption", "value proposition"
+        ],
+        "Technological Transitions": [
+            "digital transformation", "HRMS integration", "API", "analytics",
+            "mobile app", "platform upgrade"
+        ],
+        "Service Delivery Issues": [
+            "onboarding delay", "tech issues", "merchant issue", "support problem",
+            "delivery delay", "reimbursement issue"
+        ],
+        "Employee Engagement": [
+            "low adoption", "user experience", "employee feedback",
+            "generation gap", "hybrid work", "usage drop"
+        ]
+    }
+    for category, keywords in default_churn_keywords_display.items():
+        st.markdown(f"**{category}**: {', '.join(keywords)}")
 
 
 if st.button("🚀 Start Analysis"):
@@ -371,7 +446,7 @@ if st.button("🚀 Start Analysis"):
     else:
         with st.spinner("Crunching numbers and fetching news... This might take a while for each company."):
             analysis_results = run_analysis(
-                company_names_to_analyze, days_to_search)  # Pass days_to_search
+                company_names_to_analyze, days_to_search, custom_keywords_input)  # Pass custom keywords input
 
         st.success("🎉 Analysis Complete!")
         st.markdown("---")
