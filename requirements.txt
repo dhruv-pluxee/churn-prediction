@@ -6,3 +6,4 @@ together
 beautifulsoup4
 dateparser
 xlsxwriter
+openpyxl
